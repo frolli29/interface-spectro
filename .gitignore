@@ -1,0 +1,7 @@
+# gitignore file 
+
+# ignore folders in link with the pyinstaller process
+/dist/
+/build/
+#ignore the virtual environment. Each user must configure it on its own
+/venv/
