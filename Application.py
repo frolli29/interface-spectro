@@ -3,11 +3,12 @@
 from configparser import ConfigParser
 import os
 from pathlib import Path
-from PyQt5 import QtWidgets
+from PyQt5 import QtWidgets, QtCore
 from datetime import datetime
 
 from subsystems.Instrument import Instrument
 from lib.oceandirect.OceanDirectAPI import OceanDirectError
+import subsystems.processing as proc
 from windows.main_window import MainWindow
 from graphic.windows.main_win import Ui_MainWindow
 
@@ -18,6 +19,8 @@ def require_spectro_open(func):
     def wrapper(self, *args, **kwargs):
         if self.instrument.state=='open':
             return func(self, *args, **kwargs)
+        else:
+            print("instrument close")
     return wrapper
 
 def time_us_to_ms(t_us:int,step_us:int):
@@ -47,9 +50,15 @@ class Application():
         #Attributes
         self.instrument=instrument
         self.win=win
+        self.measure_timer = QtCore.QTimer()
+
         self.get_saving_param_from_file()    #parameters for saving : from file to attribute
         self.win.display_saving_param(self.saving_param)    #display attributes
 
+        #Measure timer
+        self.measure_timer.setInterval(self.time_step_ms)
+        self.measure_timer.start()
+        
         #affichage
         self.win.display_connexion_state('closed')
 
@@ -64,47 +73,46 @@ class Application():
         self.win.EDcorr_box.stateChanged.connect(lambda: self.change_ED_corr())
         #saving param
         self.win.saving_folder.textChanged.connect(self.refresh_saving_param)
+        self.win.basename.textChanged.connect(self.refresh_saving_param)
         self.win.intensity_box.stateChanged.connect(self.refresh_saving_param)
         self.win.absorbance_box.stateChanged.connect(self.refresh_saving_param)
         self.win.transmittance_box.stateChanged.connect(self.refresh_saving_param)
         self.win.N_spectra.valueChanged.connect(self.refresh_saving_param)
         self.win.T_sec.valueChanged.connect(self.refresh_saving_param)
         self.win.browse.clicked.connect(self.browse_folder)
-
         self.win.window_close.connect(self.update_saving_param_in_file)
-        #connexions saving param
-        #self.win.start_multiple_meas.clicked.connect()
-        #self.win.single_meas.clicked.connect()
-        """
-        self.spectro_settings.clicked.connect(self.OnClick_spectro_settings)
-        self.save_button.clicked.connect(self.app.createDirectMeasureFile)  #deux façons de sauver les données"""
-        
+        #measure
+        self.win.start_multiple_meas.clicked.connect(self.take_multiple_measure)
+        self.win.single_meas.clicked.connect(self.take_single_measure)
 
     def get_saving_param_from_file(self):
         """Gets parameters from settings.ini to attributes of Application"""
         parser = ConfigParser() #getting data from Parser
         parser.read(self.settings)
         #Config for data savings
-        self.folder=parser.get('saving', 'folder')       
+        self.folder=parser.get('saving', 'folder')      
+        self.basename=parser.get('saving', 'name') 
         self.int_box=tobool(parser.get('saving', 'intensity'))
         self.abs_box=tobool(parser.get('saving', 'absorbance'))    
         self.trans_box=tobool(parser.get('saving', 'transmittance'))
         #Configs for continuous measures
-        self.N_spectra=int(parser.get('saving', 'N_spectra'))
+        self.N_meas=int(parser.get('saving', 'n_spectra'))
         self.time_step_ms=int(1000*float(parser.get('saving', 'time_step_sec')))
-        self.saving_param=[self.folder,self.int_box,self.abs_box,self.trans_box,self.N_spectra,self.time_step_ms]
+        self.saving_param=[self.folder,self.basename,self.int_box,self.abs_box,self.trans_box,self.N_meas,self.time_step_ms]
 
     def refresh_saving_param(self):
+        """Stores current parameters of interface as attributes of Class Application"""
         #Config for data savings
         self.folder=self.win.saving_folder.text()
+        self.basename=self.win.basename.text()
         self.int_box=self.win.intensity_box.isChecked()
         #print(self.int_box)
         self.abs_box=self.win.absorbance_box.isChecked()
         self.trans_box=self.win.transmittance_box.isChecked()
         #Configs for continuous measures
-        self.N_spectra=self.win.N_spectra.value()
+        self.N_meas=self.win.N_spectra.value()
         self.time_step_ms=self.win.T_sec.value()
-        self.saving_param=[self.folder,self.int_box,self.abs_box,self.trans_box,self.N_spectra,self.time_step_ms]
+        self.saving_param=[self.folder,self.int_box,self.abs_box,self.trans_box,self.N_meas,self.time_step_ms]
         #self.win.display_saving_param(self.saving_param)
 
     def update_saving_param_in_file(self):
@@ -113,11 +121,12 @@ class Application():
         parser.read(self.settings)
         #Config for data savings
         parser.set('saving', 'folder', str(self.folder))       
+        parser.set('saving', 'name', str(self.basename))       
         parser.set('saving', 'intensity', str(self.int_box)) 
         parser.set('saving', 'absorbance', str(self.abs_box))    
         parser.set('saving', 'transmittance', str(self.trans_box))  
         #Configs for continuous measures
-        parser.set('saving', 'N_spectra', str(self.N_spectra))
+        parser.set('saving', 'n_spectra', str(self.N_meas))
         parser.set('saving', 'time_step_sec', str(round(self.time_step_ms/1000,3)))
         file = open(self.settings,'w')
         parser.write(file)
@@ -184,6 +193,9 @@ class Application():
         if self.instrument.reference_absorbance!=None:    #abs ref
             self.win.reference_abs_plot=self.win.Abs_direct.plot([0],[0],pen='y')
             self.win.reference_abs_plot.setData(self.win.lambdas,self.instrument.reference_absorbance)
+        if self.instrument.current_transmittance_spectrum!=None:
+            self.win.trans_direct_plot=self.win.Transmittance_direct.plot([0],[0],clear = True)
+            self.win.trans_direct_plot.setData(self.win.lambdas,self.instrument.current_transmittance_spectrum)
     
     def change_shutter_state(self):
         #state=self.win.shutter.isChecked
@@ -226,66 +238,184 @@ class Application():
         print("Closing main window")
         self.refresh_saving_param()
         self.update_saving_param_in_file()
-        
-"""class Data():
-    def __init__(self,app):
-        #Data object can be 'single' or 'multiple'
-        self.app=app
     
-    def measure(self):
-        if self.app
+    def take_single_measure(self):
+        if self.instrument.state=='open':
+            self.refresh_saving_param()
+            self.dt = datetime.now()
+            self.intensity_spectrum = self.instrument.get_averaged_spectrum()
+            if self.instrument.dark_and_ref_stored():
+                self.absorbance_spectrum, t_abs = proc.intensity2absorbance(self.intensity_spectrum,self.instrument.active_ref_spectrum,self.instrument.active_background_spectrum)
+                self.transmittance_spectrum, t_trans = proc.intensity2transmittance(self.intensity_spectrum,self.instrument.active_ref_spectrum,self.instrument.active_background_spectrum)
+            self.create_single_file()
 
-class SingleMeasure(Data):
-    def __init__(self, app):
-        super().__init__(app)
+    def take_multiple_measure(self):
+        """Creates a file with all the spectra for each type of spectra"""
+        if self.instrument.state=='open':
+            self.refresh_saving_param()
+            self.intensity_spectra = []
+            self.absorbance_spectra = []
+            self.transmittance_spectra = []
+            self.measure_times=[]
+            self.measure_index=0
+            self.take_measure_k()
+
+    def wait_for_next_measure(self):
+        self.measure_timer.singleShot(self.time_step_ms,self.take_measure_k)
     
-    def take_measure(self):
-        self.app.refresh_saving_param()
-
-        if self.app.
-        self.
-
+    def take_measure_k(self):
+        if self.instrument.state=='open':
+            self.measure_index+=1
+            self.dt = datetime.now()
+            self.measure_times.append(self.dt)
+            self.intensity_spectrum = self.instrument.get_averaged_spectrum()
+            self.intensity_spectra.append(self.intensity_spectrum)
+            if self.instrument.dark_and_ref_stored():
+                self.absorbance_spectrum, t_abs = proc.intensity2absorbance(self.intensity_spectrum,self.instrument.active_ref_spectrum,self.instrument.active_background_spectrum)
+                self.transmittance_spectrum, t_trans = proc.intensity2transmittance(self.intensity_spectrum,self.instrument.active_ref_spectrum,self.instrument.active_background_spectrum)
+                self.absorbance_spectra.append(self.absorbance_spectrum)
+                self.transmittance_spectra.append(self.transmittance_spectrum)
+            if self.measure_index<self.N_meas:
+                self.wait_for_next_measure()
+            else:   #last measure
+                self.create_multiple_measure_files()
+                
     def create_single_file(self):
-        dt = datetime.now()
-        date_text=dt.strftime("%m/%d/%Y %H:%M:%S")
-        date_time=dt.strftime("%m-%d-%Y_%Hh%Mmin%Ss")
-        name = "meas_"
-        header = "Instant measure on Dommino titrator\n"+"date and time : "+str(date_text)+"\n"+"Device : "+self.instrument_id+"\n\n"
-        data = ""
-        print("saving instant measure - ")
+
+        date_text=self.dt.strftime("%m/%d/%Y %H:%M:%S")
+        date_time=self.dt.strftime("%m-%d-%Y_%Hh%Mmin%Ss")
+        name = self.basename+"_meas_"
+
+        print("saving instant measure - ",date_text)
 
         if self.instrument.state=='open':
-            name+="Abs_"
-            self.app.instrument.update_infos()
-            header+=self.app.instrument.infos
-
-            background = self.instrument.active_background_spectrum
-            ref = self.instrument.active_ref_spectrum
-            sample = self.instrument.current_intensity_spectrum
-            absorbance = self.instrument.current_absorbance_spectrum
-            wl = self.instrument.wavelengths
-            spectra=[wl,background,ref,sample,absorbance]
-            Nc=len(spectra)-1
-            if background==None or ref==None: #pas de calcul d'absorbance possible
-                data+="lambda(nm)\tsample (unit count)\n"
-                for l in range(self.instrument.N_lambda):
-                    data+=str(spectra[0][l])+'\t'
-                    data+=str(spectra[3][l])+'\n'
-            else:
-                data+="lambda(nm)\tbackground (unit count)\treference ('')\tsample ('')\tabsorbance (abs unit)\n"
-                for l in range(self.instrument.N_lambda):
-                    for c in range(Nc):
-                        data+=str(spectra[c][l])+'\t'
-                    data+=str(spectra[Nc][l])+'\n'
+            header = "Single measure\n"+"date and time : "+str(date_text)+"\n"
+            self.instrument.update_infos()
+            header+=self.instrument.infos
+            data="lambda(nm)\t"
+            spectra=[self.instrument.wavelengths]
+            if self.instrument.dark_and_ref_stored():
+                data+="\tbackground (unit count)\treference ('')"
+                spectra.append(self.instrument.active_background_spectrum)
+                spectra.append(self.instrument.active_ref_spectrum)
+            if self.int_box:
+                name+="Intens_"
+                data+="\tintensity ('')"
+                spectra.append(self.intensity_spectrum)    
+            if self.instrument.dark_and_ref_stored():   
+                if self.abs_box:
+                    name+="Absorb_"
+                    data+="\tabsorbance (OD)"
+                    spectra.append(self.absorbance_spectrum)
+                if self.trans_box:
+                    name+="Transmit_"
+                    data+="\ttransmittance (%)"
+                    spectra.append(self.transmittance_spectrum)
+            data+="\n"
+            N_spec=len(spectra)-1
+            print(N_spec)
+            for l in range(self.instrument.N_lambda):
+                for c in range(N_spec):
+                    #print(l,c)
+                    data+=str(spectra[c][l])+'\t'
+                data+=str(spectra[N_spec][l])+'\n'
         else:
             header+="Spectrometer closed\n"
 
         name+=str(date_time)
         output=header+"\n\n"+data
-        f_out = open(self.saving_folder+'/'+name+'.txt','w') #création d'un fichier dans le répertoire
+        f_out = open(self.folder+'/'+name+'.txt','w') #création d'un fichier dans le répertoire
         f_out.write(output)
         f_out.close()    
 
-class MultipleMeasure(Data):
-    def __init__(self, app):
-        super().__init__(app)"""
+    def create_multiple_measure_files(self):
+        """For each spectrum type (intensity, absorbance and transmittance) one file is created
+        Each file contains informations on system's current state
+        File intensity contains background and reference spectra"""
+        
+        self.refresh_saving_param()
+
+        dt = datetime.now()
+        date_text=dt.strftime("%m/%d/%Y %H:%M:%S")
+        date_time=dt.strftime("%m-%d-%Y_%Hh%Mmin%Ss")
+        name = self.basename+"_multiple_measure_"
+        print("saving instant measure - ",date_text)
+
+        if self.instrument.state=='open':
+
+            self.instrument.update_infos()
+            header = ("Multiple measure\n"+"Start time : "+str(date_text)
+            +"\nNumber of measures :"+str(self.N_meas)+"\nTime interval (ms) : "
+            +str(self.time_step_ms)+"\n\n"+self.instrument.infos)
+                                
+                                ### Intensity spectra
+            if self.int_box:
+                header_intensity="Intensity spectra (unit counts)\n"+header
+                spectra_intensity=[self.instrument.wavelengths]
+                data_intensity="lambda(nm)\t"
+                if self.instrument.dark_and_ref_stored():
+                    data_intensity+="background (unit count)\treference ('')"
+                    spectra_intensity.append(self.instrument.active_background_spectrum)
+                    spectra_intensity.append(self.instrument.active_ref_spectrum)
+                for n in range(len(self.intensity_spectra)):
+                    data_intensity+="\t"+str(n+1)
+                data_intensity+='\n'
+                spectra_intensity+=self.intensity_spectra   #all spectra
+                #print("len spectra",len(spectra_intensity))
+                #print("Nmeas",self.N_meas)
+                #add text
+                n_col=1+2*self.instrument.dark_and_ref_stored()+self.N_meas #number of columns
+                #print("ncol",n_col)
+                for l in range(self.instrument.N_lambda):
+                    for c in range(n_col):
+                        #print(l,c)
+                        data_intensity+=str(spectra_intensity[c][l])+'\t'
+                    data_intensity+='\n'
+                name_intensity = name+"intensity_"+str(date_time)
+                self.write_file(name_intensity,header_intensity,data_intensity)
+            
+            if self.instrument.dark_and_ref_stored():   
+                                ### Absorbance spectra
+                if self.abs_box:
+                    header_absorbance="Absorbance spectra (OD)\n"+header
+                    spectra_absorbance=[self.instrument.wavelengths]
+                    spectra_absorbance+=self.absorbance_spectra
+                    data_absorbance="lambda(nm)"
+                    for n in range(len(self.absorbance_spectra)):
+                        data_absorbance+="\t"+str(n+1)
+                    data_absorbance+="\n"
+                    #add text
+                    n_col=1+self.N_meas #number of columns
+                    for l in range(self.instrument.N_lambda):
+                        for c in range(n_col):
+                            #print(l,c)
+                            data_absorbance+=str(spectra_absorbance[c][l])+'\t'
+                        data_absorbance+='\n'
+                    name_absorbance = name+"absorbance_"+str(date_time)
+                    self.write_file(name_absorbance,header_absorbance,data_absorbance)
+
+                if self.trans_box:
+                    header_transmittance="Transmittance spectra (%)\n"+header
+                    spectra_transmittance=[self.instrument.wavelengths]+self.transmittance_spectra
+                    data_transmittance="lambda(nm)"
+                    for n in range(len(self.transmittance_spectra)):
+                        data_transmittance+="\t"+str(n+1)
+                    data_transmittance+="\n"
+                    #add text
+                    n_col=1+self.N_meas #number of columns
+                    for l in range(self.instrument.N_lambda):
+                        for c in range(n_col):
+                            #print(l,c)
+                            data_transmittance+=str(spectra_transmittance[c][l])+'\t'
+                        data_transmittance+='\n'
+                    name_transmittance = name+"transmittance_"+str(date_time)
+                    self.write_file(name_transmittance,header_transmittance,data_transmittance)
+        else:
+            header+="Spectrometer closed\n"
+
+
+    def write_file(self,name,header,data):
+        output=header+"\n\n"+data
+        f_out = open(self.folder+'/'+name+'.txt','w') #création d'un fichier dans le répertoire
+        f_out.write(output)
+        f_out.close()

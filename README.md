@@ -8,3 +8,5 @@ Le fichier main.py permet de lancer l'application. Il doit être lancé avec un 
 contient les modules : PyQt5 et pyqtgraph et Phidget22 (import de numpy automatique)
 
 Le dossier lib contient le .dll pour piloter le spectro. Ce fichier peut également se téléchager sur la page : https://www.oceanoptics.com/software/oceandirect/
+
+Ce projet est structuré selon l'architecture MVP (Model View Presenter). https://medium.com/@mark_huber/a-clean-architecture-for-a-pyqt-gui-using-the-mvp-pattern-78ecbc8321c0

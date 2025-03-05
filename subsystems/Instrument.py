@@ -41,6 +41,7 @@ class Instrument(Spectrometer):
         self.reference_absorbance=None  #courbe d'absorbance juste après la prise de réf
         self.current_intensity_spectrum=None    #Sample or whatever is in the cell
         self.current_absorbance_spectrum=None   #Absorbance
+        self.current_transmittance_spectrum=None
         self.absorbance_spectrum1=None
         self.wavelengths=None
         self.model=''
@@ -76,7 +77,7 @@ class Instrument(Spectrometer):
     
     @require_open
     def configure(self):
-        self.wavelengths = [ round(l,1) for l in self.spectro.wavelengths ]
+        self.wavelengths = [ round(l,2) for l in self.spectro.wavelengths ]
         self.N_lambda = len(self.wavelengths)
         self.model=self.spectro.get_model()
         self.serial_number=self.spectro.get_serial_number()
@@ -147,7 +148,7 @@ class Instrument(Spectrometer):
     
     def update_infos(self,disp=False):
         if self.state=='open':
-            self.infos=("\nState : Connected"\
+            self.infos=("\nSpectrometer : Connected"\
             +"\nModel : "+self.model\
             +"\nSerial number : "+self.serial_number\
             +"\nIntegration time (ms) : "+str(self.t_int_us/1000)\
@@ -158,7 +159,7 @@ class Instrument(Spectrometer):
             +"\nAbsorbance formula : A = log10[(reference-background)/(sample-background)]"\
             +"\nTransmittance formula : T = (sample-background)/(reference-background)")
         else:
-            self.infos="\nState : Not connected"
+            self.infos="\nSpectrometer : Not connected"
         if disp==True:
             print(self.infos)
 
@@ -220,6 +221,9 @@ class Instrument(Spectrometer):
                 spectra[i] = self.spectro.get_formatted_spectrum() #gets the current spectrum
                 # with activated corrections (nonlinearity and/or electric dark) and with
                 # NO substraction of the background
+            for spec in spectra:
+                for i in spec:
+                    i=round(i,2)
             self.spectro.set_scans_to_average(N)
         except OceanDirectError as e:
             logger.error(e.get_error_details())  
@@ -261,8 +265,11 @@ class Instrument(Spectrometer):
     def update_absorbance_spectrum(self):
         self.current_absorbance_spectrum, self.Aproc_delay = sp.intensity2absorbance(self.current_intensity_spectrum,self.active_ref_spectrum,self.active_background_spectrum)
 
+    def update_current_transmittance_spectrum(self):
+        self.current_transmittance_spectrum, self.Tproc_delay = sp.intensity2transmittance(self.current_intensity_spectrum,self.active_ref_spectrum,self.active_background_spectrum)
+
     def dark_and_ref_stored(self):
-        """Returns True if a background and a reference spectrum have been stored"""
+        """Returns True if a background and a reference spectrum have been stored, False otherwise"""
         open=(self.state=='open')
         bgd=(self.active_background_spectrum!=None)
         ref=(self.active_ref_spectrum!=None)
@@ -272,6 +279,7 @@ class Instrument(Spectrometer):
         self.update_intensity_spectrum()
         if self.dark_and_ref_stored(): #background and ref recorded
             self.update_absorbance_spectrum()
+            self.update_current_transmittance_spectrum()
 
     #@Necessary that background and ref are stored
     def update_refresh_rate(self):   

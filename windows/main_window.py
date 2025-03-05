@@ -33,8 +33,6 @@ class MainWindow(QMainWindow, Ui_MainWindow):
 
     #Signals must be defined in the class
     co_disco=pyqtSignal()
-    #shutter=pyqtSignal()
-    #signal_shutter=
     window_close=pyqtSignal()
 
     def __init__(self, parent=None):
@@ -62,9 +60,14 @@ class MainWindow(QMainWindow, Ui_MainWindow):
         self.Abs_direct = pg.PlotWidget(self.tab2)
         self.Abs_direct.setGeometry(rect)
         self.Abs_direct.setObjectName("Abs_direct")
+        self.Transmittance_direct = pg.PlotWidget(self.tab3)
+        self.Transmittance_direct.setGeometry(rect)
+        self.Transmittance_direct.setObjectName("Transmittance_direct")
+        
         
         self.intensity_direct_plot=self.Spectrum_direct.plot([0],[0])
         self.abs_direct_plot=self.Abs_direct.plot([0],[0])
+        self.trans_direct_plot=self.Transmittance_direct.plot([0],[0])
 
         #self.app.timer_display.timeout.connect(self.refresh_screen)
         #self.close_all.clicked.connect(self.app.close_all_devices)
@@ -72,13 +75,14 @@ class MainWindow(QMainWindow, Ui_MainWindow):
 
     def display_saving_param(self,param):
         self.saving_folder.setText(param[0])
-        self.intensity_box.setChecked(bool(param[1]))
-        print(self.intensity_box.isChecked())
-        self.absorbance_box.setChecked(bool(param[2]))
-        self.transmittance_box.setChecked(bool(param[3]))
-        self.N_spectra.setValue(int(param[4]))
-        self.T_sec.setValue(float(param[5]))
-        print(param)
+        self.basename.setText(param[1])
+        self.intensity_box.setChecked(bool(param[2]))
+        #print(self.intensity_box.isChecked())
+        self.absorbance_box.setChecked(bool(param[3]))
+        self.transmittance_box.setChecked(bool(param[4]))
+        self.N_spectra.setValue(int(param[5]))
+        self.T_sec.setValue(float(param[6]))
+        #print(param)
 
     def display_connexion_state(self, state):
         """Updates light indicator and Connexion button"""

@@ -34,6 +34,13 @@ def get_optimal_integration_time(spectra,int_time_us):
 
 #Les spectres entrés sont supposés corrigés du bruit d'obscurité et de la non linéarité du capteur
 def intensity2absorbance(spectrum, ref_spec, dark=None):
+    """Input :
+    spectrum : list[float] intensity spectrum
+    ref_spec : list[float]  reference spectrum
+    (dark) : list[float]    dark spectrum
+    Returns a tuple [abs_spectrum, dt]
+    abs_spectrum : list[float] absorbance spectrum
+    dt : time of execution of function"""
     t0=time.time()
     N=len(spectrum)
     abs_spectrum=[0 for k in range(N)]
@@ -48,6 +55,22 @@ def intensity2absorbance(spectrum, ref_spec, dark=None):
     t1=time.time()
     dt=t1-t0
     return abs_spectrum_round, dt
+
+def intensity2transmittance(spectrum, ref_spec, dark=None):
+    t0=time.time()
+    N=len(spectrum)
+    trans_spectrum=[0 for k in range(N)]
+    for k in range(N):#pour éviter une division par zéro ou un log(0)
+        if dark!=None:
+            if ref_spec[k]-dark[k]!=0:
+                trans_spectrum[k] = abs((spectrum[k]-dark[k])/(ref_spec[k]-dark[k]))
+        else:
+            if ref_spec[k]!=0 and spectrum[k]!=0:
+                trans_spectrum[k] = abs(spectrum[k]/ref_spec[k])
+    trans_spectrum_round = [round(a,2) for a in trans_spectrum]
+    t1=time.time()
+    dt=t1-t0
+    return trans_spectrum_round, dt
 
 def correct_spectrum_from_dilution(spec,dil):
     """spec is a spectrum : list of float, dil is a float
