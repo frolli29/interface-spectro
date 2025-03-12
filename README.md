@@ -5,7 +5,7 @@ Cette application permet de connecter n'importe quel spectromètre USB Ocean Opt
 Une fenêtre principale permet de Connecter le spectromètre
 
 Le fichier main.py permet de lancer l'application. Il doit être lancé avec un environnement virtuel qui \
-contient les modules : PyQt5 et pyqtgraph et Phidget22 (import de numpy automatique)
+contient les modules : PyQt5 et pyqtgraph et numpy, matplotlib.
 
 Le dossier lib contient le .dll pour piloter le spectro. Ce fichier peut également se téléchager sur la page : https://www.oceanoptics.com/software/oceandirect/
 

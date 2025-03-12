@@ -36,6 +36,7 @@ class Instrument(Spectrometer):
         # when activated via methods "set_nonlinearity_correction_usage" and 
         # "set_electric_dark_correction_usage". None of these are corrected from 
         # the background spectrum. 
+        self.dark_spectrum=None
         self.active_background_spectrum=None  #Background Spectrum
         self.active_ref_spectrum=None   #Reference
         self.reference_absorbance=None  #courbe d'absorbance juste après la prise de réf
@@ -119,6 +120,9 @@ class Instrument(Spectrometer):
         else:
             print("No boxcar value selected")
         
+        #stores dark in buffer to allow electric dark and nonlinearity correction ? Test
+        self.acquire_dark() 
+        
         disable_nl_corr=False
         try:    
             self.spectro.set_nonlinearity_correction_usage(True)
@@ -127,6 +131,7 @@ class Instrument(Spectrometer):
             self.nl_corr=False
             disable_nl_corr=True
             print("Nonlinearity correction not supported by device")
+        
         disable_ed_corr=False
         try:
             self.spectro.set_electric_dark_correction_usage(True)
@@ -243,6 +248,13 @@ class Instrument(Spectrometer):
         self.avg_delay=t2-t1
         self.update_refresh_rate()
         return avg
+
+    @require_open
+    def acquire_dark(self):
+        self.set_shutter_state(False)
+        time.sleep(1)
+        self.dark_spectrum=self.get_averaged_spectrum()
+        self.spectro.set_stored_dark_spectrum(self.dark_spectrum)
 
     @require_open
     def acquire_background(self):
