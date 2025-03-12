@@ -5,3 +5,4 @@
 /build/
 #ignore the virtual environment. Each user must configure it on its own
 /venv/
+/spectro_env/

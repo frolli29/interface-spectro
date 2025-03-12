@@ -5,6 +5,7 @@ import os
 from pathlib import Path
 from PyQt5 import QtWidgets, QtCore
 from datetime import datetime
+import time
 
 from subsystems.Instrument import Instrument
 from lib.oceandirect.OceanDirectAPI import OceanDirectError
@@ -128,6 +129,7 @@ class Application():
         #Configs for continuous measures
         parser.set('saving', 'n_spectra', str(self.N_meas))
         parser.set('saving', 'time_step_sec', str(round(self.time_step_ms/1000,3)))
+        time.sleep(1)
         file = open(self.settings,'w')
         parser.write(file)
         file.close()

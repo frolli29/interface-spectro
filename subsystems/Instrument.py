@@ -48,9 +48,11 @@ class Instrument(Spectrometer):
         self.serial_number=''
         self.acquisition_delay=3000
         
+        self.refresh_rate=self.acquisition_delay+2000
+
         #timer pour acquisition des spectres
         self.timer = QtCore.QTimer()
-        self.timer.setInterval(self.acquisition_delay+2000)
+        self.timer.setInterval(self.refresh_rate)
         
         self.update_infos()
 
@@ -283,7 +285,7 @@ class Instrument(Spectrometer):
 
     #@Necessary that background and ref are stored
     def update_refresh_rate(self):   
-        self.refresh_rate=self.Irec_time*1000+500   #ms
+        self.refresh_rate=int(self.Irec_time*1000)+500   #ms
         self.timer.setInterval(self.refresh_rate)
 
     ### Fonctions avancées    
